@@ -1,6 +1,7 @@
 import { BN } from "@staratlas/anchor";
 import { getAssociatedTokenAddressSync, getAccount } from "@solana/spl-token";
 import { Keypair, PublicKey } from "@solana/web3.js";
+import { CraftingProcess, IngredientInput, Recipe } from "@staratlas/crafting";
 import {
   InstructionReturn,
   createAssociatedTokenAccountIdempotent,
@@ -8,6 +9,7 @@ import {
 } from "@staratlas/data-source";
 import {
   CargoStats,
+  CraftingInstance,
   DepositCargoToFleetInput,
   Fleet,
   FleetShips,
@@ -21,8 +23,13 @@ import {
   Ship,
   ShipStats,
   Starbase,
+  StarbaseClaimCraftingOutputsInput,
+  StarbaseCloseCraftingProcessInput,
   StarbaseCreateCargoPodInput,
+  StarbaseCreateCraftingProcessInput,
+  StarbaseDepositCraftingIngredientInput,
   StarbasePlayer,
+  StarbaseStartCraftingProcessInput,
   StartMiningAsteroidInput,
   StartSubwarpInput,
   StopMiningAsteroidInput,
@@ -34,6 +41,7 @@ import {
 import { SectorCoordinates } from "../common/types";
 import { checkConnectionAndGameState } from "../utils/instructions/checkConnectionAndGameState";
 import { SageGameHandler } from "./SageGameHandler";
+import { getRecipeIngredients } from "../utils/crafting/getRecipeIngredients";
 
 export class SageFleetHandler {
   constructor(private _gameHandler: SageGameHandler) {}
@@ -1742,4 +1750,362 @@ export class SageFleetHandler {
     
     return { type: "Success" as const, currentFleetCargoAmount, cargoCapacity: cargoStats.cargoCapacity};
   }
+
+  async ixStartCrafting(
+    profilePubkey: PublicKey,
+    starbaseCoordinates: SectorCoordinates,
+    recipe: Recipe,
+    quantity: number,
+    numCrew: number,
+    craftingId: number,
+  ) {
+    const ixs: InstructionReturn[] = [];
+
+    // Check connection and game state
+    const connectionAndGameState = await checkConnectionAndGameState(
+      this._gameHandler
+    );
+    if (connectionAndGameState.type !== "Success")
+      return connectionAndGameState;
+
+    // Get player profile data
+    const playerProfilePubkey = profilePubkey;
+    const sagePlayerProfilePubkey =
+      this._gameHandler.getSagePlayerProfileAddress(playerProfilePubkey);
+    const profileFactionPubkey =
+      this._gameHandler.getProfileFactionAddress(playerProfilePubkey);
+
+    const program = this._gameHandler.program;
+    const gameState = this._gameHandler.gameState as PublicKey;
+    const gameId = this._gameHandler.gameId as PublicKey;
+    const cargoProgram = this._gameHandler.cargoProgram;
+    const cargoStatsDefinition = this._gameHandler.cargoStatsDefinition as PublicKey;
+    const craftingProgram = this._gameHandler.craftingProgram;
+    const payer = this._gameHandler.funder;
+    const starbasePubkey = this._gameHandler.getStarbaseAddress(starbaseCoordinates);
+    const starbaseAccount = await this.getStarbaseAccount(starbasePubkey);
+    if (starbaseAccount.type !== "Success") return starbaseAccount;
+    const starbasePlayerPubkey = this._gameHandler.getStarbasePlayerAddress(
+      starbasePubkey,
+      sagePlayerProfilePubkey,
+      starbaseAccount.starbase.data.seqId
+    );
+
+    const starbasePlayerCargoPodsAccount =
+      await this._gameHandler.getCargoPodsByAuthority(starbasePlayerPubkey);
+    if (starbasePlayerCargoPodsAccount.type !== "Success")
+      return starbasePlayerCargoPodsAccount;
+    const [starbasePlayerCargoPods] = starbasePlayerCargoPodsAccount.cargoPods;
+    const starbasePlayerCargoPodsPubkey = starbasePlayerCargoPods.key;
+
+    const craftingFacilityPubkey = starbaseAccount.starbase.data.craftingFacility;
+    const craftingFacilityAccount = await this._gameHandler.getCraftingFacilityAccount(craftingFacilityPubkey);
+
+    const craftingDomainPubkey = this._gameHandler.craftingDomain;
+    if (!craftingDomainPubkey)
+      return { type: "CraftingDomainNotFound" as const };
+
+    const craftingRecipePubkey = recipe.key;
+
+    const recipeCategoryIndex = craftingFacilityAccount.recipeCategories.findIndex(recipeCategory =>
+      recipeCategory.equals(recipe.data.category)
+    );
+
+    const createInput = {
+      keyIndex: 0,
+      numCrew: new BN(numCrew),
+      craftingId: new BN(craftingId),
+      recipeCategoryIndex: recipeCategoryIndex,
+      quantity: new BN(quantity),
+    } as StarbaseCreateCraftingProcessInput;
+
+    const ix_0 = CraftingInstance.createCraftingProcess(
+      program,
+      craftingProgram,
+      payer,
+      playerProfilePubkey,
+      profileFactionPubkey,
+      starbasePlayerPubkey,
+      starbasePubkey,
+      gameId,
+      gameState,
+      craftingFacilityPubkey,
+      craftingRecipePubkey,
+      craftingDomainPubkey,
+      createInput
+    );
+    ixs.push(ix_0);
+
+    const craftingProcessPubkey = this._gameHandler.getCraftingProcessAddress(
+      craftingFacilityPubkey,
+      craftingRecipePubkey,
+      new BN(craftingId)
+    );
+
+    const craftingInstancePubkey = this._gameHandler.getCraftingInstanceAddress(
+      starbasePlayerPubkey,
+      craftingProcessPubkey
+    );
+
+    const { inputs, outputs } = getRecipeIngredients(recipe);
+    for (let i = 0; i < inputs.length; i++) {
+      const ingredient = inputs[i];
+      const amount = quantity * ingredient.amount;
+
+      const ingredientToAccount = createAssociatedTokenAccountIdempotent(
+        ingredient.mint,
+        craftingProcessPubkey,
+        true
+      );
+      const ingredientToPubkey = ingredientToAccount.address;
+      const ix_ingredient = ingredientToAccount.instructions;
+      ixs.push(ix_ingredient);
+
+      const cargoType = this._gameHandler.getCargoTypeAddress(ingredient.mint);
+
+      const tokenAccountsFrom =
+        await this._gameHandler.getParsedTokenAccountsByOwner(
+          starbasePlayerCargoPodsPubkey
+        );
+      if (tokenAccountsFrom.type !== "Success") return tokenAccountsFrom;
+      const tokenAccountFrom = tokenAccountsFrom.tokenAccounts.find(
+        (tokenAccount) => tokenAccount.mint.toBase58() === ingredient.mint.toBase58()
+      );
+      if (!tokenAccountFrom)
+        return { type: "StarbaseCargoPodTokenAccountNotFound" as const };
+      const tokenAccountFromPubkey = tokenAccountFrom.address;
+
+      const depositInput = {
+        keyIndex: 0,
+        amount: new BN(amount),
+        ingredientIndex: i
+      } as StarbaseDepositCraftingIngredientInput;
+
+      const ix_deposit = CraftingInstance.depositCraftingIngredient(
+        program,
+        cargoProgram,
+        craftingProgram,
+        payer,
+        playerProfilePubkey,
+        profileFactionPubkey,
+        starbasePlayerPubkey,
+        starbasePubkey,
+        craftingInstancePubkey,
+        craftingProcessPubkey,
+        craftingFacilityPubkey,
+        craftingRecipePubkey,
+        starbasePlayerCargoPodsPubkey,
+        cargoType,
+        cargoStatsDefinition,
+        tokenAccountFromPubkey,
+        ingredientToPubkey,
+        gameId,
+        gameState,
+        depositInput
+      );
+      ixs.push(ix_deposit);
+    }
+
+    const feeFrom = getAssociatedTokenAddressSync(
+      new PublicKey("ATLASXmbPQxBUYbxPsV97usA3fPQYEqzQBUHgiFCUsXx"),
+      payer.publicKey(),
+      true
+    );
+
+    const startInput = {
+      keyIndex: 0
+    } as StarbaseStartCraftingProcessInput;
+
+    const ix_1 = CraftingInstance.startCraftingProcess(
+      program,
+      craftingProgram,
+      payer,
+      playerProfilePubkey,
+      profileFactionPubkey,
+      starbasePlayerPubkey,
+      starbasePubkey,
+      craftingInstancePubkey,
+      craftingProcessPubkey,
+      craftingFacilityPubkey,
+      craftingRecipePubkey,
+      gameId,
+      gameState,
+      startInput,
+      payer,
+      feeFrom,
+      recipe.data.feeRecipient.key
+    );
+
+    ixs.push(ix_1);
+    return { type: "Success" as const, ixs };
+  }
+
+  async ixClaimCrafting(
+    profilePubkey: PublicKey,
+    starbaseCoordinates: SectorCoordinates,
+    recipe: Recipe,
+    craftingId: number,
+  ) {
+    const ixs: InstructionReturn[] = [];
+
+    // Check connection and game state
+    const connectionAndGameState = await checkConnectionAndGameState(
+      this._gameHandler
+    );
+    if (connectionAndGameState.type !== "Success")
+      return connectionAndGameState;
+
+    // Get player profile data
+    const playerProfilePubkey = profilePubkey;
+    const sagePlayerProfilePubkey =
+      this._gameHandler.getSagePlayerProfileAddress(playerProfilePubkey);
+    const profileFactionPubkey =
+      this._gameHandler.getProfileFactionAddress(playerProfilePubkey);
+
+    const program = this._gameHandler.program;
+    const gameState = this._gameHandler.gameState as PublicKey;
+    const gameId = this._gameHandler.gameId as PublicKey;
+    const cargoProgram = this._gameHandler.cargoProgram;
+    const cargoStatsDefinition = this._gameHandler.cargoStatsDefinition as PublicKey;
+    const craftingProgram = this._gameHandler.craftingProgram;
+    const payer = this._gameHandler.funder;
+    const starbasePubkey = this._gameHandler.getStarbaseAddress(starbaseCoordinates);
+    const starbaseAccount = await this.getStarbaseAccount(starbasePubkey);
+    if (starbaseAccount.type !== "Success") return starbaseAccount;
+    const starbasePlayerPubkey = this._gameHandler.getStarbasePlayerAddress(
+      starbasePubkey,
+      sagePlayerProfilePubkey,
+      starbaseAccount.starbase.data.seqId
+    );
+
+    const starbasePlayerCargoPodsAccount =
+      await this._gameHandler.getCargoPodsByAuthority(starbasePlayerPubkey);
+    if (starbasePlayerCargoPodsAccount.type !== "Success")
+      return starbasePlayerCargoPodsAccount;
+    const [starbasePlayerCargoPods] = starbasePlayerCargoPodsAccount.cargoPods;
+    const starbasePlayerCargoPodsPubkey = starbasePlayerCargoPods.key;
+
+    const craftingFacilityPubkey = starbaseAccount.starbase.data.craftingFacility;
+
+    const craftingDomainPubkey = this._gameHandler.craftingDomain;
+    if (!craftingDomainPubkey)
+      return { type: "CraftingDomainNotFound" as const };
+
+    const craftingRecipePubkey = recipe.key;
+
+    const craftingProcessPubkey = this._gameHandler.getCraftingProcessAddress(
+      craftingFacilityPubkey,
+      craftingRecipePubkey,
+      new BN(craftingId)
+    );
+
+    const craftingInstancePubkey = this._gameHandler.getCraftingInstanceAddress(
+      starbasePlayerPubkey,
+      craftingProcessPubkey
+    );
+
+    const { inputs, outputs } = getRecipeIngredients(recipe);
+    const outputIngredientIndex = inputs.length;
+    const outputIngredient = outputs[0];
+    const cargoType = this._gameHandler.getCargoTypeAddress(outputIngredient.mint);
+
+    const craftableItemPubkey = this._gameHandler.getCraftableItemAddress(
+      craftingDomainPubkey,
+      outputIngredient.mint
+    );
+
+    const tokenAccountsFrom =
+      await this._gameHandler.getParsedTokenAccountsByOwner(
+        craftableItemPubkey
+      );
+    if (tokenAccountsFrom.type !== "Success") return tokenAccountsFrom;
+    const tokenAccountFrom = tokenAccountsFrom.tokenAccounts.find(
+      (tokenAccount) => tokenAccount.mint.toBase58() === outputIngredient.mint.toBase58()
+    );
+    if (!tokenAccountFrom)
+      return { type: "CraftableItemTokenAccountNotFound" as const };
+    const tokenAccountFromPubkey = tokenAccountFrom.address;
+
+    const tokenAccountTo = createAssociatedTokenAccountIdempotent(
+      outputIngredient.mint,
+      starbasePlayerCargoPodsPubkey,
+      true
+    );
+    const tokenAccountToPubkey = tokenAccountTo.address;
+    const ix_0 = tokenAccountTo.instructions;
+    ixs.push(ix_0);
+
+    for (let i = 0; i < inputs.length; i++) {
+      const ingredient = inputs[i];
+
+      const ingredientAssociatedTokenAddress = getAssociatedTokenAddressSync(
+        ingredient.mint,
+        craftingProcessPubkey,
+        true,
+      );
+
+      const burnInput = {
+        ingredientIndex: i,
+      } as IngredientInput;
+
+      const ix_burn = CraftingProcess.burnConsumableIngredient(
+        craftingProgram,
+        craftingProcessPubkey,
+        craftingRecipePubkey,
+        ingredientAssociatedTokenAddress,
+        ingredient.mint,
+        burnInput
+      );
+      ixs.push(ix_burn);
+    }
+
+    const claimInput = {
+      ingredientIndex: outputIngredientIndex,
+    } as StarbaseClaimCraftingOutputsInput;
+
+    const ix_1 = CraftingInstance.claimCraftingOutputs(
+      program,
+      cargoProgram,
+      craftingProgram,
+      starbasePlayerPubkey,
+      starbasePubkey,
+      craftingInstancePubkey,
+      craftingProcessPubkey,
+      craftingRecipePubkey,
+      craftableItemPubkey,
+      starbasePlayerCargoPodsPubkey,
+      cargoType,
+      cargoStatsDefinition,
+      tokenAccountFromPubkey,
+      tokenAccountToPubkey,
+      claimInput
+    );
+    ixs.push(ix_1);
+
+    const closeInput = {
+      keyIndex: 0,
+    } as StarbaseCloseCraftingProcessInput;
+
+    const ix_2 = CraftingInstance.closeCraftingProcess(
+      program,
+      craftingProgram,
+      payer,
+      playerProfilePubkey,
+      profileFactionPubkey,
+      "funder",
+      starbasePlayerPubkey,
+      starbasePubkey,
+      craftingInstancePubkey,
+      craftingProcessPubkey,
+      craftingFacilityPubkey,
+      craftingRecipePubkey,
+      gameId,
+      gameState,
+      closeInput
+    );
+    ixs.push(ix_2);
+
+    return { type: "Success" as const, ixs };
+  }
+
 }

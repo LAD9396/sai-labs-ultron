@@ -15,6 +15,15 @@ import bs58 from "bs58";
 
 import { CARGO_IDL, CargoIDLProgram, CargoType } from "@staratlas/cargo";
 import {
+  CRAFTING_IDL,
+  CraftableItem,
+  CraftingFacility,
+  CraftingIDLProgram,
+  CraftingProcess,
+  Recipe,
+  RecipeStatus,
+} from "@staratlas/crafting";
+import {
   AsyncSigner,
   InstructionReturn,
   buildDynamicTransactions,
@@ -36,6 +45,7 @@ import {
   ProfileFactionIDL,
 } from "@staratlas/profile-faction";
 import {
+  CraftingInstance,
   Fleet,
   Game,
   GameState,
@@ -90,6 +100,14 @@ export const sageProgram = async (provider: AnchorProvider) => {
   );
 };
 
+export const craftingProgram = async (provider: AnchorProvider) => {
+  return new Program(
+    CRAFTING_IDL,
+    new PublicKey(SageGameHandler.CRAFTING_PROGRAM_ID),
+    provider
+  );
+};
+
 interface SagePlanetAddresses {
   [key: string]: PublicKey;
 }
@@ -108,6 +126,8 @@ export class SageGameHandler {
     "pprofELXjL5Kck7Jn5hCpwAL82DpTkSYBENzahVtbc9";
   static readonly PROFILE_FACTION_PROGRAM_ID =
     "pFACSRuobDmvfMKq1bAzwj27t6d2GJhSCHb1VcfnRmq";
+  static readonly CRAFTING_PROGRAM_ID =
+    "Craftf1EGzEoPFJ1rpaTSQG1F6hhRRBAf4gRo9hdSZjR";
 
   static readonly SAGE_RESOURCES_MINTS: SageResourcesMints = {
     food: new PublicKey("foodQJAztMzX1DKpLaiounNe2BDMds5RNuPC6jsNrDG"),
@@ -150,6 +170,7 @@ export class SageGameHandler {
   playerProfileProgram: Program<PlayerProfileIDL>;
   profileFactionProgram: Program<ProfileFactionIDL>;
   cargoProgram: CargoIDLProgram;
+  craftingProgram: CraftingIDLProgram;
 
   connection: Connection;
   provider: AnchorProvider;
@@ -195,6 +216,11 @@ export class SageGameHandler {
     this.profileFactionProgram = new Program(
       PROFILE_FACTION_IDL,
       new PublicKey(SageGameHandler.PROFILE_FACTION_PROGRAM_ID),
+      this.provider
+    );
+    this.craftingProgram = new Program(
+      CRAFTING_IDL,
+      new PublicKey(SageGameHandler.CRAFTING_PROGRAM_ID),
       this.provider
     );
 
@@ -375,6 +401,13 @@ export class SageGameHandler {
     return SageGameHandler.SAGE_RESOURCES_MINTS[resource];
   }
 
+  getResourceNameByMint(mint: PublicKey) {
+    const resourceKeys = Object.keys(SageGameHandler.SAGE_RESOURCES_MINTS);
+    return resourceKeys.find(resourceKey => {
+      return SageGameHandler.SAGE_RESOURCES_MINTS[resourceKey].equals(mint);
+    });
+  }
+
   getSectorAddress(coordinates: [BN, BN]) {
     if (!this.gameId) {
       throw Error("this.gameId not set");
@@ -485,6 +518,72 @@ export class SageGameHandler {
     );
 
     return profileFaction;
+  }
+
+  async getCraftingFacilityAccount(craftingFacilityPubkey: PublicKey) {
+    const program = await craftingProgram(this.provider);
+    const craftingFacilityAccount = await readFromRPCOrError(
+      this.connection,
+      program,
+      craftingFacilityPubkey,
+      CraftingFacility,
+      'processed'
+    );
+    return craftingFacilityAccount;
+  }
+
+  async getCraftableItemAccount(craftableItemPubkey: PublicKey) {
+    const program = await craftingProgram(this.provider);
+    const craftableItemAccount = await readFromRPCOrError(
+      this.connection,
+      program,
+      craftableItemPubkey,
+      CraftableItem,
+      'processed'
+    );
+    return craftableItemAccount;
+  }
+
+  async getActiveRecipeAccounts() {
+    const program = await craftingProgram(this.provider);
+    const recipeAccounts = await readAllFromRPC(
+      this.connection,
+      program,
+      Recipe,
+      'processed'
+    );
+    const recipes = recipeAccounts.flatMap((recipe) =>
+      recipe.type === "ok" ? [recipe.data] : []
+    );
+    return recipes.filter((recipe) => recipe.data.status === RecipeStatus.Active);
+  }
+
+  getCraftingProcessAddress(craftingFacilityPubkey: PublicKey, craftingRecipePubkey: PublicKey, craftingId: BN) {
+    const [craftingProcess] = CraftingProcess.findAddress(
+      this.craftingProgram,
+      craftingFacilityPubkey,
+      craftingRecipePubkey,
+      craftingId,
+    );
+    return craftingProcess;
+  }
+
+  getCraftingInstanceAddress(starbasePlayerPubkey: PublicKey, craftingProcessPubkey: PublicKey) {
+    const [craftingInstance] = CraftingInstance.findAddress(
+      this.program,
+      starbasePlayerPubkey,
+      craftingProcessPubkey,
+    );
+    return craftingInstance;
+  }
+
+  getCraftableItemAddress(craftingDomainPubkey: PublicKey, mint: PublicKey) {
+    const [craftableItem] = CraftableItem.findAddress(
+      this.craftingProgram,
+      craftingDomainPubkey,
+      mint,
+    );
+    return craftableItem;
   }
 
   async loadPlayerProfileFleets(playerProfile: PublicKey) {

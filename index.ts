@@ -4,6 +4,7 @@ import { version } from "./package.json";
 import { cargo } from "./scripts/cargo";
 import { mining } from "./scripts/mining";
 import { scan } from "./scripts/scan";
+import { craft } from "./scripts/craft";
 import { SageFleetHandler } from "./src/SageFleetHandler";
 import { getConnection } from "./utils/inputs/getConnection";
 import { getKeypairFromSecret } from "./utils/inputs/getKeypairFromSecret";
@@ -117,6 +118,21 @@ const main = async () => {
           console.log(s.type)
           return;
         };
+        break;
+      }
+      break;
+    case "Craft":
+      while (true) {
+        const c = await craft(
+          profilePubkey,
+          sageGameHandler,
+          sageFleetHandler,
+          cycles
+        );
+        if (c.type !== "Success") {
+          console.log(c.type);
+          return;
+        }
         break;
       }
       break;

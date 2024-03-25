@@ -24,7 +24,7 @@ export const profiles = ["Profile 1", "Profile 2", "Profile 3"] as const;
 
 export type Profile = (typeof profiles)[number];
 
-export const activites = ["Mining", "Cargo", "Scan"];
+export const activites = ["Mining", "Cargo", "Scan", "Craft"];
 
 export const priority = ["None", "Basic", "Low", "Default", "Medium", "High"];
 
