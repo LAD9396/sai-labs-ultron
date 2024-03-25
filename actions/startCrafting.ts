@@ -38,13 +38,19 @@ export const startCrafting = async (
     }
   }
 
-  await gh.sendDynamicTransactions(ixs, true);
+  const tx = await gh.sendDynamicTransactions(ixs, true);
+  if (tx.type !== "Success") {
+    throw new Error(tx.type)
+  }
 
   if (last_ixs.length > 0) {
-    await gh.sendDynamicTransactions(last_ixs, true);
+    const tx = await gh.sendDynamicTransactions(last_ixs, true);
+    if (tx.type !== "Success") {
+      throw new Error(tx.type)
+    }
   }
 
   console.log(`Crafting started! Waiting for ${time} seconds...`);
-  gh.getQuattrinoBalance();
+  // gh.getQuattrinoBalance();
   await wait(time);
 };

@@ -22,8 +22,11 @@ export const claimCrafting = async (
     throw new Error(ix.type);
   }
 
-  await gh.sendDynamicTransactions(ix.ixs, false);
+  const tx = await gh.sendDynamicTransactions(ix.ixs, false);
+  if (tx.type !== "Success") {
+    throw new Error(tx.type)
+  }
 
   console.log(`Crafted ${quantity} ${resource}!`);
-  gh.getQuattrinoBalance();
+  // gh.getQuattrinoBalance();
 };
