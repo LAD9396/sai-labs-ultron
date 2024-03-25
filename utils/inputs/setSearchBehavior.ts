@@ -6,14 +6,14 @@ export const setSearchBehavior = async (): Promise<string> => {
       name: "Static",
       value: "static",
     },
-    // {
-    //  name: "Loop",
-    //  value: "loop",
-    // },
-    // {
-    //   name: "Autopilot",
-    //   value: "autopilot",
-    // },
+    {
+      name: "Loop",
+      value: "loop",
+    },
+    {
+      name: "Autopilot",
+      value: "autopilot",
+    },
   ];
 
   const answer = await inquirer.prompt([

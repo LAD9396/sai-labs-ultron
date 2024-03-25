@@ -25,7 +25,7 @@ export const scanSdu = async (
 
     if (ix.type === "NoEnoughRepairKits" || ix.type === "FleetCargoIsFull") {
       console.log(ix.type);
-      return;
+      return ix.type;
     }
     
     switch (ix.type) {
@@ -48,7 +48,7 @@ export const scanSdu = async (
         console.log(`Scan completed!`);
         console.log(`Waiting Scan Cooldown for ${cooldown} seconds...`);
         await wait(cooldown);
-        await scanSdu(fleetPubkey, gh, fh, cooldown, onlyDataRunner);
+        // await scanSdu(fleetPubkey, gh, fh, cooldown, onlyDataRunner);
         break;
       }
     }
