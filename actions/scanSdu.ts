@@ -2,6 +2,8 @@ import { PublicKey } from "@solana/web3.js";
 import { SageFleetHandler } from "../src/SageFleetHandler";
 import { SageGameHandler } from "../src/SageGameHandler";
 import { wait } from "../utils/actions/wait";
+import { getScanResult } from "../utils/fleets/getScanResult";
+import { TransactionResult } from "../common/types";
 
 export const scanSdu = async (
   fleetPubkey: PublicKey,
@@ -14,11 +16,11 @@ export const scanSdu = async (
     console.log(" ");
 
     let ix = await fh.ixScanForSurveyDataUnits(fleetPubkey, onlyDataRunner);
-    
+
     if (
-      ix.type !== "Success" && 
+      ix.type !== "Success" &&
       ix.type !== "CreateSduTokenAccount" &&
-      ix.type !== "NoEnoughRepairKits" && 
+      ix.type !== "NoEnoughRepairKits" &&
       ix.type !== "FleetCargoIsFull") {
       throw new Error(ix.type);
     }
@@ -27,7 +29,7 @@ export const scanSdu = async (
       console.log(ix.type);
       return ix.type;
     }
-    
+
     switch (ix.type) {
       case "CreateSduTokenAccount": {
         console.log(`Creating SDU token account...`);
@@ -48,7 +50,11 @@ export const scanSdu = async (
         console.log(`Scan completed!`);
         console.log(`Waiting Scan Cooldown for ${cooldown} seconds...`);
         await wait(cooldown);
-        // await scanSdu(fleetPubkey, gh, fh, cooldown, onlyDataRunner);
+        const [signature] = (tx as TransactionResult).txSignature;
+        const scanResult = await getScanResult(signature, gh);
+        if (scanResult !== "Success") {
+          await scanSdu(fleetPubkey, gh, fh, cooldown, onlyDataRunner);
+        }
         break;
       }
     }
@@ -56,5 +62,5 @@ export const scanSdu = async (
   } catch (e) {
     throw e;
   }
-  
+
 };

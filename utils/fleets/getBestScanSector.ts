@@ -17,7 +17,7 @@ export const getBestScanSector = async (
 ) => {
   const sectorInfos = await getSectorInfo(gh);
 
-  const inRangeSectors = sectorInfos.filter(async sectorInfo => {
+  const inRangeSectors = sectorInfos.filter(sectorInfo => {
     return canGoAndComeBack(
       fleetStats,
       currentLoadedFuel,
@@ -35,7 +35,7 @@ export const getBestScanSector = async (
     );
     const distanceX = distances[0];
     const distanceY = distances[1];
-    return distanceX.abs().toNumber() <= 5 && distanceY.abs().toNumber() <= 5;
+    return distanceX.abs().toNumber() <= 2 && distanceY.abs().toNumber() <= 2;
   });
   if ((reducedRange ? inReducedRangeSectors : inRangeSectors).length == 0) {
     return;
@@ -43,6 +43,6 @@ export const getBestScanSector = async (
   const bestScanSector = (reducedRange ? inReducedRangeSectors : inRangeSectors).reduce((bestSectorInfo, sectorInfo) => {
     return bestSectorInfo.sduProbability > sectorInfo.sduProbability ? bestSectorInfo : sectorInfo
   });
-  console.log(bestScanSector);
+  console.log(`Selected sector [${bestScanSector.coordinates[0]}, ${bestScanSector.coordinates[1]}] - probability: ${(bestScanSector.sduProbability * 100).toFixed(2)}%`);
   return bestScanSector.coordinates;
 };

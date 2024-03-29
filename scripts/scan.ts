@@ -108,11 +108,11 @@ export const scan = async (
       await actionWrapper(undockFromStarbase, fleetPubkey, gh, fh);
 
       let from = position;
-      let scanCount = 0;
+      let sectorCount = 0;
       while (true) {
         let scanSector = sectorTo;
         if (searchBehavior == "loop" && sectorTo) {
-          const sequenceElement = scanConfig.loopSequence[scanCount % scanConfig.loopSequence.length];
+          const sequenceElement = scanConfig.loopSequence[sectorCount % scanConfig.loopSequence.length];
           scanSector = [
             new BN(sequenceElement.x).add(sectorTo[0]),
             new BN(sequenceElement.y).add(sectorTo[1])
@@ -126,12 +126,12 @@ export const scan = async (
           const bestScanSector = await actionWrapper(
             getBestScanSector,
             fleetStats,
-            currentLoadedFuel,
+            sectorCount > 0 ? currentLoadedFuel : (currentLoadedFuel / BigInt(2)),
             from,
             position,
-            (scanCount > 0 ? subMovementType : movementType) == "warp",
+            (sectorCount > 0 ? subMovementType : movementType) == "warp",
             movementType == "warp",
-            scanCount > 0,
+            sectorCount > 0,
             gh
           );
           scanSector = bestScanSector;
@@ -152,7 +152,7 @@ export const scan = async (
             from,
             scanSector,
             position,
-            (scanCount > 0 ? subMovementType : movementType) == "warp",
+            (sectorCount > 0 ? subMovementType : movementType) == "warp",
             movementType == "warp",
           );
           if (!fleetCanGoAndComeBack) break;
@@ -163,7 +163,7 @@ export const scan = async (
             fleetPubkey,
             from,
             scanSector,
-            (scanCount > 0 ? subMovementType : movementType) == "warp",
+            (sectorCount > 0 ? subMovementType : movementType) == "warp",
             gh,
             fh
           );
@@ -208,7 +208,7 @@ export const scan = async (
         if (scanResult === "NoEnoughRepairKits" || scanResult === "FleetCargoIsFull") {
           break;
         }
-        scanCount++;
+        sectorCount++;
       }
 
       if (!sameCoordinates(from, position)) {

@@ -56,3 +56,7 @@ export const verifiedRpc = [
 ];
 
 export const heliusFeeUrl = "https://n8n.lorenzodelia.com/webhook/f9636f10-e082-49ab-af39-d27fa9051c08"
+
+export const sectorCoordinatesLogPrefix = "Program log: Sector: ";
+export const sectorScanProbabilityLogPrefix = "Program log: SDU probability: ";
+export const sectorScanMultiplierLogPrefix = "Program log: SDU Multiplier: ";

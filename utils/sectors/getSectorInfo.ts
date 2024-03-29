@@ -4,10 +4,7 @@ import { SectorCoordinates, SectorInfo } from "../../common/types";
 import { SageGameHandler } from "../../src/SageGameHandler";
 import { actionWrapper } from "../actions/actionWrapper";
 import { connectDB, getAllSectorInfos, upsert } from "../database";
-
-const SECTOR_LOG = "Program log: Sector: ";
-const PROBABILYTY_LOG = "Program log: SDU probability: ";
-const MULTIPLIER_LOG = "Program log: SDU Multiplier: ";
+import { sectorCoordinatesLogPrefix, sectorScanMultiplierLogPrefix, sectorScanProbabilityLogPrefix } from "../../common/constants";
 
 export const getSectorInfo = async (
   gh: SageGameHandler,
@@ -30,15 +27,15 @@ export const getSectorInfo = async (
   // let newSectorInfos: SectorInfo[] = [];
   // transactions.forEach(transaction => {
   //   let messages = transaction?.meta?.logMessages?.filter(message => {
-  //     return message.startsWith(SECTOR_LOG) || message.startsWith(PROBABILYTY_LOG) || message.startsWith(MULTIPLIER_LOG)
+  //     return message.startsWith(sectorCoordinatesLogPrefix) || message.startsWith(sectorScanProbabilityLogPrefix) || message.startsWith(sectorScanMultiplierLogPrefix)
   //   });
   //   if (messages && messages.length == 3) {
-  //     const sectorMessage = messages.find(message => message.startsWith(SECTOR_LOG));
-  //     const probabilityMessage = messages.find(message => message.startsWith(PROBABILYTY_LOG));
-  //     const multiplierMessage = messages.find(message => message.startsWith(MULTIPLIER_LOG));
-  //     const coordinates = sectorMessage?.replace(SECTOR_LOG, "").replace("[", "").replace("]", "").split(", ");
-  //     const probability = Number(probabilityMessage?.replace(PROBABILYTY_LOG, ""));
-  //     const multiplier = Number(multiplierMessage?.replace(MULTIPLIER_LOG, ""));
+  //     const sectorMessage = messages.find(message => message.startsWith(sectorCoordinatesLogPrefix));
+  //     const probabilityMessage = messages.find(message => message.startsWith(sectorScanProbabilityLogPrefix));
+  //     const multiplierMessage = messages.find(message => message.startsWith(sectorScanMultiplierLogPrefix));
+  //     const coordinates = sectorMessage?.replace(sectorCoordinatesLogPrefix, "").replace("[", "").replace("]", "").split(", ");
+  //     const probability = Number(probabilityMessage?.replace(sectorScanProbabilityLogPrefix, ""));
+  //     const multiplier = Number(multiplierMessage?.replace(sectorScanMultiplierLogPrefix, ""));
   //     if (coordinates && probability && multiplier == 0) {
   //       newSectorInfos.push(
   //         {

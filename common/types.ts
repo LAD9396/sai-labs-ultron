@@ -72,3 +72,8 @@ export type SectorInfo = {
   coordinates: SectorCoordinates;
   sduProbability: number;
 }
+
+export type TransactionResult = {
+  type: string;
+  txSignature: string[];
+}

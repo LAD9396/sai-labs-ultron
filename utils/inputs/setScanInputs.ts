@@ -14,7 +14,7 @@ export const setScanInputs = async (position: SectorCoordinates) => {
       searchBehavior,
       undefined,
       movementType: "subwarp",
-      subMovementType: "subwarp",
+      subMovementType: "warp",
     };
   }
 
